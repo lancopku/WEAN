@@ -1,10 +1,6 @@
 import torch
 import torch.nn as nn
-from torch.autograd import Variable
 import torch.utils.data
-import torch.backends.cudnn as cudnn
-from torch.nn.utils.rnn import pack_padded_sequence as pack
-from torch.utils.serialization import load_lua
 import models
 import data.dataloader as dataloader
 import data.utils as utils
@@ -26,40 +22,32 @@ parser.add_argument('-gpus', default=[], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
 parser.add_argument('-restore', default='', type=str,
                     help="restore checkpoint")
-parser.add_argument('-seed', type=int, default=1234,
-                    help="Random seed")
 parser.add_argument('-model', default='seq2seq', type=str,
                     help="Model selection")
 parser.add_argument('-score', default='', type=str,
                     help="score_fn")
 parser.add_argument('-pretrain', action='store_true',
                     help="load pretrain embedding")
-parser.add_argument('-notrain', action='store_true',
-                    help="train or not")
 parser.add_argument('-limit', type=int, default=0,
                     help="data limit")
 parser.add_argument('-log', default='', type=str,
                     help="log directory")
 parser.add_argument('-unk', action='store_true',
                     help="replace unk")
-parser.add_argument('-memory', action='store_true',
-                    help="memory efficiency")
 
 opt = parser.parse_args()
 config = utils.read_config(opt.config)
-torch.manual_seed(opt.seed)
 
 #checkpoint
 if opt.restore:
     print('loading checkpoint...\n')
     checkpoints = torch.load(opt.restore)
-    #config = checkpoints['config']
+    config = checkpoints['config']
 
 #cuda
 use_cuda = torch.cuda.is_available() and len(opt.gpus)>0
 if use_cuda:
     torch.cuda.set_device(opt.gpus[0])
-    torch.cuda.manual_seed(opt.seed)
     #cudnn.benchmark = True
 
 #data
@@ -68,16 +56,12 @@ start_time = time.time()
 datas = torch.load(config.data)
 print('loading time cost: %.3f' % (time.time()-start_time))
 
-trainset, validset = datas['train'], datas['valid']
+testset = datas['test']
 src_vocab, tgt_vocab = datas['dicts']['src'], datas['dicts']['tgt']
 config.src_vocab = src_vocab.size()
 config.tgt_vocab = tgt_vocab.size()
 
-if opt.limit > 0:
-    trainset.src = trainset.src[:opt.limit]
-
-trainloader = dataloader.get_loader(trainset, batch_size=config.batch_size, shuffle=True, num_workers=2)
-validloader = dataloader.get_loader(validset, batch_size=config.batch_size, shuffle=False, num_workers=2)
+testloader = dataloader.get_loader(testset, batch_size=config.batch_size, shuffle=False, num_workers=0)
 
 if opt.pretrain:
     pretrain_embed = torch.load(config.emb_file)
@@ -98,10 +82,6 @@ if use_cuda:
     model.cuda()
 if len(opt.gpus) > 1:
     model = nn.DataParallel(model, device_ids=opt.gpus, dim=1)
-    #criterion = model.module.criterion()
-#else:
-    #criterion = model.criterion()
-#criterion = models.criterion(config.tgt_vocab, use_cuda)
 
 #optimizer
 if opt.restore:
@@ -144,76 +124,16 @@ report_vocab, report_tot_vocab = 0, 0
 scores = [[] for metric in config.metric]
 scores = collections.OrderedDict(zip(config.metric, scores))
 
-#train
-def train(epoch):
-    model.train()
-
-    if opt.model == 'gated':
-        model.current_epoch = epoch
-
-    global updates, total_loss, start_time, report_correct, report_total, report_tot_vocab, report_vocab
-
-    for raw_src, src, src_len, raw_tgt, tgt, tgt_len in trainloader:
-
-        src = Variable(src)
-        tgt = Variable(tgt)
-        src_len = Variable(src_len).unsqueeze(0)
-        tgt_len = Variable(tgt_len).unsqueeze(0)
-        if use_cuda:
-            src = src.cuda()
-            tgt = tgt.cuda()
-            src_len = src_len.cuda()
-            tgt_len = tgt_len.cuda()
-
-        model.zero_grad()
-        outputs, targets = model(src, src_len, tgt, tgt_len)
-        #if len(opt.gpus) > 1:
-        #    loss, num_total, num_correct = model.module.get_loss(outputs, targets, criterion)
-        #else:
-        #    loss, num_total, num_correct = model.get_loss(outputs, targets, criterion)
-        loss, num_total, num_correct, vocab_count, total_count = model.compute_loss(outputs, targets, opt.memory)
-        #loss, num_total, num_correct = model(src, src_len, tgt, tgt_len)
-
-        total_loss += loss
-        report_correct += num_correct
-        report_total += num_total
-        report_tot_vocab += total_count
-        report_vocab += vocab_count
-
-        optim.step()
-        utils.progress_bar(updates, config.eval_interval)
-        updates += 1
-
-        if updates % config.eval_interval == 0:
-            logging("epoch: %3d, ppl: %6.3f, time: %6.3f, updates: %8d, accuracy: %2.2f, vocab: %2.2f\n"
-                    % (epoch, math.exp(total_loss / report_total), time.time()-start_time, updates,
-                       report_correct * 100.0 / report_total, report_vocab * 100.0 / report_tot_vocab))
-            print('evaluating after %d updates...\r' % updates)
-            score = eval(epoch)
-            for metric in config.metric:
-                scores[metric].append(score[metric])
-                if score[metric] >= max(scores[metric]):
-                    save_model(log_path+'best_'+metric+'_checkpoint.pt')
-                    with codecs.open(log_path+'best_'+metric+'_prediction.txt','w','utf-8') as f:
-                        f.write(codecs.open(log_path+'candidate.txt','r','utf-8').read())
-            model.train()
-            total_loss, start_time = 0, time.time()
-            report_correct, report_total = 0, 0
-            report_vocab, report_tot_vocab = 0, 0
-
-        if updates % config.save_interval == 0:
-            save_model(log_path+'checkpoint.pt')
-
 
 #evaluate
 def eval(epoch):
     model.eval()
     reference, candidate, source, alignments = [], [], [], []
-    for raw_src, src, src_len, raw_tgt, tgt, tgt_len in validloader:
+    for raw_src, src, src_len, raw_tgt, tgt, tgt_len in testloader:
         if len(opt.gpus) > 1:
-            samples, targets, alignment = model.module.sample(src, src_len, tgt, tgt_len)
+            samples, alignment = model.module.sample(src, src_len)
         else:
-            samples, targets, alignment = model.sample(src, src_len, tgt, tgt_len)
+            samples, alignment = model.beam_sample(src, src_len, beam_size=config.beam_size)
 
         candidate += [tgt_vocab.convertToLabels(s, dict.EOS) for s in samples]
         source += raw_src
@@ -223,7 +143,6 @@ def eval(epoch):
     if opt.unk:
         cands = []
         for s, c, align in zip(source, candidate, alignments):
-            #cand = [word if word != dict.UNK_WORD or idx >= len(s) else s[idx] for word, idx in zip(c, align)]
             cand = []
             for word, idx in zip(c, align):
                 if word == dict.UNK_WORD and idx < len(s):
@@ -254,32 +173,10 @@ def eval(epoch):
             logging("Failed to compute rouge score.\n")
             score['rouge'] = 0.0
 
+
     return score
 
 
-def save_model(path):
-    global updates
-    model_state_dict = model.module.state_dict() if len(opt.gpus) > 1 else model.state_dict()
-    checkpoints = {
-        'model': model_state_dict,
-        'config': config,
-        'optim': optim,
-        'updates': updates}
-    torch.save(checkpoints, path)
-
-
-def main():
-    for i in range(1, config.epoch+1):
-        if not opt.notrain:
-            train(i)
-        else:
-            eval(i)
-            return
-    for metric in config.metric:
-        logging("Best %s score: %.2f\n" % (metric, max(scores[metric])))
-        with open(log_path+metric+'.txt', 'w') as f:
-            for i, score in enumerate(scores[metric]):
-                f.write(str(i)+','+str(score)+'\n')
 
 if __name__ == '__main__':
-    main()
+    eval(0)
