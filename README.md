@@ -33,9 +33,9 @@ bibtext:
 @inproceedings{wean,
   author    = {Shuming Ma and Xu Sun and Wei Li and Sujian Li and Wenjie Li and Xuancheng Ren},
   title     = {Word Embedding Attention Network: Generating Words by Querying Distributed Word 
-	   Representations for Paraphrase Generation},
+	      Representations for Paraphrase Generation},
   booktitle = {{NAACL} {HLT} 2018, The 2018 Conference of the North American Chapter
-	   of the Association for Computational Linguistics: Human Language Technologies},
+	      of the Association for Computational Linguistics: Human Language Technologies},
   year      = {2018}
 }
 ```
