@@ -1,5 +1,5 @@
 # Word Embedding Attention Network
-Code for "Word Embedding Attention Network: Generating Words by Querying Distributed Word Representations for Paraphrase Generation"
+Code for "Word Embedding Attention Network: Generating Words by Querying Distributed Word Representations for Paraphrase Generation" [[pdf]](https://arxiv.org/abs/1803.01465)
 ## Requirements
 * Ubuntu 16.04
 * Python 3.5
