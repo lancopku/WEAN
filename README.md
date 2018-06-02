@@ -1,5 +1,5 @@
 # Word Embedding Attention Network
-Code for "Word Embedding Attention Network: Generating Words by Querying Distributed Word Representations for Paraphrase Generation" [[pdf]](https://arxiv.org/abs/1803.01465)
+Code for "Query and Output: Generating Words by Querying Distributed Word Representations for Paraphrase Generation" [[pdf]](https://arxiv.org/abs/1803.01465)
 ## Requirements
 * Ubuntu 16.04
 * Python 3.5
@@ -26,13 +26,13 @@ python3 predict.py -gpus 0 -score general -config lcsts.yaml -unk -restore data/
 ## Cite
 To use this code, please cite the following paper:<br><br>
 Shuming Ma, Xu Sun, Wei Li, Sujian Li, Wenjie Li, and Xuancheng Ren. 
-Word Embedding Attention Network: Generating Words by Querying Distributed Word Representations for Paraphrase Generation. In proceedings of NAACL-HLT 2018.
+Query and Output: Generating Words by Querying Distributed Word Representations for Paraphrase Generation. In proceedings of NAACL-HLT 2018.
 
 bibtext:
 ```
 @inproceedings{wean,
   author    = {Shuming Ma and Xu Sun and Wei Li and Sujian Li and Wenjie Li and Xuancheng Ren},
-  title     = {Word Embedding Attention Network: Generating Words by Querying Distributed Word 
+  title     = {Query and Output: Generating Words by Querying Distributed Word 
 	       Representations for Paraphrase Generation},
   booktitle = {{NAACL} {HLT} 2018, The 2018 Conference of the North American Chapter
 	       of the Association for Computational Linguistics: Human Language Technologies},
